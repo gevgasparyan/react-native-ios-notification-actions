@@ -1,7 +1,9 @@
+/* eslint-disable max-classes-per-file */
 import { NativeModules, NativeAppEventEmitter } from 'react-native';
+
 const { RNNotificationActions } = NativeModules;
 
-let actions = {};
+const actions = {};
 
 function handleActionCompleted() {
   RNNotificationActions.callCompletionHandler();
@@ -15,40 +17,48 @@ export class Action {
     this.onComplete = onComplete;
     // When a notification is received, we'll call this action by it's identifier
     actions[opts.identifier] = this;
-    NativeAppEventEmitter.addListener('notificationActionReceived', (body) => {
-      if (body.identifier === opts.identifier) {
-        onComplete(body, handleActionCompleted);
-      }
-    });
+    NativeAppEventEmitter.addListener('notificationActionReceived', this._onAction);
+  }
+
+  removeListener = () => {
+    NativeAppEventEmitter.removeListener('notificationActionReceived', this._onAction);
+  }
+
+  _onAction = (body) => {
+    if (body.identifier === this.opts.identifier) {
+      this.onComplete(body, handleActionCompleted);
+    }
   }
 }
 
 export class Category {
-
   constructor(opts) {
-    // TODO - check options
     this.opts = opts;
   }
-
 }
 
-export const updateCategories = (categories) => {
-  let cats = categories.map((cat) => {
-    return Object.assign({}, cat.opts, {
-      actions: cat.opts.actions.map((action) => action.opts)
+class PushNotificationActions {
+  categories = [];
+
+  removeAll = () => {
+    this.categories.forEach(category => {
+      if (category.opts && category.opts.actions) {
+        category.opts.actions.forEach(action => {
+          action.removeListener();
+        });
+      }
     });
-  });
+  }
 
-  RNNotificationActions.updateCategories(cats);
-  // Re-update when permissions change
-  NativeAppEventEmitter.addListener('remoteNotificationsRegistered', () => {
-    RNNotificationActions.updateCategories(cats);
-  });
-};
+  updateCategories = (_categories) => {
+    this.removeAll();
+    const categories = _categories.map((cat) => {
+      return { ...cat.opts, actions: cat.opts.actions.map((action) => action.opts)};
+    });
 
+    RNNotificationActions.updateCategories(categories);
+    this.categories = _categories;
+  };
+}
 
-export default {
-  Action,
-  Category,
-  updateCategories
-};
+export const NotificationActions = new PushNotificationActions()
